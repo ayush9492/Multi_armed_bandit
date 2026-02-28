@@ -97,3 +97,5 @@ The Streamlit dashboard shows:
 - Regret curve
 
 Access at: `http://localhost:8501`
+
+deployed link: https://multiarmedbandit.streamlit.app/
