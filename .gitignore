@@ -1,4 +1,26 @@
+# Environment
 .env
-.env
+
+# Databases
+*.db
+
+# Python
 __pycache__/
 *.pyc
+*.pyo
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+
+# MLflow
+mlruns/
+mlflow.db
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

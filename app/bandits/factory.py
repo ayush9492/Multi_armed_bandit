@@ -10,8 +10,8 @@ def create_bandit(algorithm: str, n_arms: int, epsilon: float = 0.1) -> BaseBand
 
     Args:
         algorithm: One of 'thompson', 'epsilon_greedy', 'ucb'
-        n_arms: Number of arms (variants)
-        epsilon: Exploration rate (only used by epsilon_greedy)
+        n_arms:    Number of arms (variants)
+        epsilon:   Exploration rate (only used by epsilon_greedy)
 
     Returns:
         An instance of the requested bandit algorithm.

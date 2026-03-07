@@ -15,8 +15,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.main import app
-from app.db.database import Base;get_db if False else None  # noqa
-from app.db.database import SessionLocal
+from app.db.database import Base, SessionLocal
 
 
 # ─── Test DB Setup ────────────────────────────────────────────────────────────
@@ -80,6 +79,11 @@ class TestSelectEndpoint:
             data = response.json()
             assert data["variant"] >= 0
 
+    def test_select_with_experiment(self):
+        response = client.get("/select?experiment=my_exp")
+        assert response.status_code == 200
+        assert response.json()["experiment"] == "my_exp"
+
 
 class TestRewardEndpoint:
     def test_reward_returns_updated(self):
@@ -139,6 +143,10 @@ class TestStateEndpoint:
         assert "algorithm" in data
         assert "n_arms" in data
 
+    def test_state_with_experiment(self):
+        response = client.get("/state?experiment=default")
+        assert response.status_code == 200
+
 
 class TestExperimentEndpoints:
     def test_create_experiment(self):
@@ -164,3 +172,15 @@ class TestExperimentEndpoints:
         client.post("/experiments", json={"name": "dup", "algorithm": "thompson", "n_arms": 3})
         response = client.post("/experiments", json={"name": "dup", "algorithm": "ucb", "n_arms": 3})
         assert response.status_code == 409
+
+    def test_experiment_reward_uses_correct_n_arms(self):
+        """Reward for a 5-arm experiment should accept arm index 4."""
+        client.post("/experiments", json={"name": "big_exp", "algorithm": "thompson", "n_arms": 5})
+        response = client.post("/reward", json={"arm": 4, "reward": 1.0, "experiment": "big_exp"})
+        assert response.status_code == 200
+
+    def test_experiment_reward_rejects_out_of_range_arm(self):
+        """Reward for a 2-arm experiment should reject arm index 2."""
+        client.post("/experiments", json={"name": "small_exp", "algorithm": "ucb", "n_arms": 2})
+        response = client.post("/reward", json={"arm": 2, "reward": 1.0, "experiment": "small_exp"})
+        assert response.status_code == 422

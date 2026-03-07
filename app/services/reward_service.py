@@ -4,10 +4,10 @@ reward_service.py
 Business logic layer for processing reward submissions.
 
 Responsibilities:
-  - Validate the arm index
-  - Clamp / normalize reward values
+  - Validate the arm index against the correct experiment's n_arms
+  - Validate reward values are within [0.0, 1.0]
   - Save to DB
-  - Update the in-memory bandit
+  - Update the correct in-memory bandit for the experiment
 """
 
 from sqlalchemy.orm import Session
@@ -28,13 +28,13 @@ def process_reward(
     experiment: str = "default",
 ) -> dict:
     """
-    Validate, persist, and feed a reward to the bandit.
+    Validate, persist, and feed a reward to the correct experiment's bandit.
 
     Args:
-        db: Active database session.
-        arm: Which arm (variant) was shown to the user.
-        reward: Observed outcome. Expected to be in [0.0, 1.0].
-        experiment: Experiment name (allows multiple experiments in one DB).
+        db:         Active database session.
+        arm:        Which arm (variant) was shown to the user.
+        reward:     Observed outcome. Expected to be in [0.0, 1.0].
+        experiment: Experiment name (each experiment has its own bandit).
 
     Returns:
         A dict summarising what was stored.
@@ -42,27 +42,36 @@ def process_reward(
     Raises:
         RewardValidationError if the arm index is out of range or reward is invalid.
     """
-    # 1. Validate arm index
-    if arm < 0 or arm >= N_ARMS:
+    # ── 1. Resolve the correct n_arms for this experiment ────────────────────
+    # Named experiments may have a different arm count than the global default.
+    n_arms = N_ARMS
+    if experiment != "default":
+        exp_record = crud.get_experiment(db, experiment)
+        if exp_record is not None:
+            n_arms = exp_record.n_arms
+
+    # ── 2. Validate arm index ─────────────────────────────────────────────────
+    if arm < 0 or arm >= n_arms:
         raise RewardValidationError(
-            f"Arm index {arm} is out of range. Valid range: 0 to {N_ARMS - 1}."
+            f"Arm index {arm} is out of range for experiment '{experiment}'. "
+            f"Valid range: 0 to {n_arms - 1}."
         )
 
-    # 2. Validate reward value
+    # ── 3. Validate reward value ──────────────────────────────────────────────
     if not (0.0 <= reward <= 1.0):
         raise RewardValidationError(
             f"Reward value {reward} is outside the expected range [0.0, 1.0]."
         )
 
-    # 3. Persist to database
+    # ── 4. Persist to database ────────────────────────────────────────────────
     record = crud.add_reward(db, arm=arm, reward=reward, experiment=experiment)
 
-    # 4. Update in-memory bandit so it learns immediately
-    update_reward(arm, reward)
+    # ── 5. Update the correct in-memory bandit so it learns immediately ───────
+    update_reward(arm, reward, experiment=experiment)
 
     return {
-        "id": record.id,
-        "arm": arm,
-        "reward": reward,
+        "id":         record.id,
+        "arm":        arm,
+        "reward":     reward,
         "experiment": experiment,
     }

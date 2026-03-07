@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+*.pyo
+*.db
+.env
+.git/
+.gitignore
+mlruns/
+mlflow.db
+.pytest_cache/
+tests/
+.vscode/
+.idea/
+.DS_Store

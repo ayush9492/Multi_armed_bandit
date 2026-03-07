@@ -9,7 +9,6 @@ Run with:
 
 import sqlite3
 import os
-import sys
 import time
 
 import pandas as pd
@@ -19,8 +18,12 @@ import plotly.graph_objects as go
 
 # ─── Config ──────────────────────────────────────────────────────────────────
 
-DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "bandit.db")
-REFRESH_INTERVAL = 5  # seconds between auto-refresh
+DB_PATH          = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "bandit.db")
+REFRESH_INTERVAL = 5   # seconds between auto-refresh
+
+# True best-arm win rate for regret calculation.
+# Update this to match TRUE_WIN_RATES in simulate.py.
+BEST_ARM_RATE = 0.5
 
 st.set_page_config(
     page_title="Bandit Dashboard",
@@ -63,8 +66,8 @@ st.title("🎰 Multi-Armed Bandit Dashboard")
 st.caption(f"Data source: `{DB_PATH}` · Auto-refreshes every {REFRESH_INTERVAL}s")
 
 # Experiment selector
-experiments = load_experiments() or ["default"]
-selected_exp = st.selectbox("Experiment", experiments, index=0)
+experiments    = load_experiments() or ["default"]
+selected_exp   = st.selectbox("Experiment", experiments, index=0)
 
 df = load_data()
 
@@ -79,17 +82,16 @@ if df.empty:
 
 # ─── KPI Row ─────────────────────────────────────────────────────────────────
 
-n_arms = int(df["arm"].max()) + 1
-total_pulls = len(df)
+total_pulls  = len(df)
 total_reward = df["reward"].sum()
-mean_reward = df["reward"].mean()
-best_arm = df.groupby("arm")["reward"].mean().idxmax()
+mean_reward  = df["reward"].mean()
+best_arm     = df.groupby("arm")["reward"].mean().idxmax()
 
 col1, col2, col3, col4 = st.columns(4)
-col1.metric("Total Pulls", f"{total_pulls:,}")
+col1.metric("Total Pulls",  f"{total_pulls:,}")
 col2.metric("Total Reward", f"{total_reward:.0f}")
-col3.metric("Mean Reward", f"{mean_reward:.3f}")
-col4.metric("Leading Arm", f"Arm {best_arm}")
+col3.metric("Mean Reward",  f"{mean_reward:.3f}")
+col4.metric("Leading Arm",  f"Arm {best_arm}")
 
 st.divider()
 
@@ -101,7 +103,7 @@ arm_stats = (
     .reset_index()
 )
 arm_stats["traffic_share"] = arm_stats["pulls"] / arm_stats["pulls"].sum()
-arm_stats["mean_reward"] = arm_stats["mean_reward"].round(4)
+arm_stats["mean_reward"]   = arm_stats["mean_reward"].round(4)
 arm_stats["traffic_share"] = arm_stats["traffic_share"].round(4)
 
 col_a, col_b = st.columns(2)
@@ -110,8 +112,7 @@ with col_a:
     st.subheader("Mean Reward per Arm")
     fig = px.bar(
         arm_stats,
-        x="arm",
-        y="mean_reward",
+        x="arm", y="mean_reward",
         color="arm",
         labels={"arm": "Arm", "mean_reward": "Mean Reward"},
         color_continuous_scale="Blues",
@@ -135,15 +136,31 @@ st.subheader("Cumulative Reward Over Time")
 
 df_sorted = df.copy().reset_index(drop=True)
 df_sorted["cumulative_reward"] = df_sorted["reward"].cumsum()
-df_sorted["pull_index"] = df_sorted.index + 1
+df_sorted["pull_index"]        = df_sorted.index + 1
 
 fig3 = px.line(
-    df_sorted,
-    x="pull_index",
-    y="cumulative_reward",
+    df_sorted, x="pull_index", y="cumulative_reward",
     labels={"pull_index": "Pull #", "cumulative_reward": "Cumulative Reward"},
 )
 st.plotly_chart(fig3, use_container_width=True)
+
+# ─── Regret Curve ─────────────────────────────────────────────────────────────
+
+st.subheader(f"Cumulative Regret Over Time  (best arm rate = {BEST_ARM_RATE})")
+st.caption(
+    "Regret = what you could have earned always picking the best arm "
+    "minus what you actually earned. Lower is better."
+)
+
+df_sorted["regret_step"]       = BEST_ARM_RATE - df_sorted["reward"]
+df_sorted["cumulative_regret"] = df_sorted["regret_step"].cumsum()
+
+fig_regret = px.line(
+    df_sorted, x="pull_index", y="cumulative_regret",
+    labels={"pull_index": "Pull #", "cumulative_regret": "Cumulative Regret"},
+    color_discrete_sequence=["#e74c3c"],
+)
+st.plotly_chart(fig_regret, use_container_width=True)
 
 # ─── Rolling Mean ─────────────────────────────────────────────────────────────
 
@@ -152,9 +169,7 @@ st.subheader("Rolling Mean Reward (window = 50)")
 df_sorted["rolling_mean"] = df_sorted["reward"].rolling(50, min_periods=1).mean()
 
 fig4 = px.line(
-    df_sorted,
-    x="pull_index",
-    y="rolling_mean",
+    df_sorted, x="pull_index", y="rolling_mean",
     labels={"pull_index": "Pull #", "rolling_mean": "Rolling Mean Reward"},
 )
 st.plotly_chart(fig4, use_container_width=True)
@@ -167,4 +182,6 @@ with st.expander("Raw Data Table"):
 
 # ─── Auto-Refresh ─────────────────────────────────────────────────────────────
 
-st.caption(f"Last refreshed. Reload page to update.")
+st.caption(f"Auto-refreshing every {REFRESH_INTERVAL}s...")
+time.sleep(REFRESH_INTERVAL)
+st.rerun()

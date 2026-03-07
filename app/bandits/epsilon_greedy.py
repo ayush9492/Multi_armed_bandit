@@ -13,10 +13,10 @@ class EpsilonGreedy(BaseBandit):
     """
 
     def __init__(self, n_arms: int, epsilon: float = 0.1):
-        self.n_arms = n_arms
+        self.n_arms  = n_arms
         self.epsilon = epsilon
-        self.counts = [0] * n_arms       # number of times each arm was pulled
-        self.values = [0.0] * n_arms     # running average reward per arm
+        self.counts  = [0]   * n_arms   # number of times each arm was pulled
+        self.values  = [0.0] * n_arms   # running average reward per arm
 
     def select_arm(self) -> int:
         if random.random() < self.epsilon:
@@ -35,10 +35,10 @@ class EpsilonGreedy(BaseBandit):
     def get_state(self) -> dict:
         return {
             "algorithm": "epsilon_greedy",
-            "n_arms": self.n_arms,
-            "epsilon": self.epsilon,
-            "counts": self.counts,
-            "values": self.values,
+            "n_arms":    self.n_arms,
+            "epsilon":   self.epsilon,
+            "counts":    self.counts,
+            "values":    self.values,
         }
 
     def load_state(self, state: dict) -> None:

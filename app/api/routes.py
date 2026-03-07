@@ -41,8 +41,10 @@ def select(experiment: str = "default"):
 
     Returns the arm index (e.g. 0, 1, or 2) based on the current
     algorithm's exploration/exploitation strategy.
+
+    Each experiment uses its own independent bandit instance.
     """
-    arm = select_variant()
+    arm = select_variant(experiment=experiment)
     return SelectResponse(variant=arm, experiment=experiment)
 
 
@@ -56,8 +58,8 @@ def reward(data: RewardRequest, db: Session = Depends(get_db)):
     """
     Submit the outcome of showing a variant to a user.
 
-    - `arm`: which variant was shown (must match what `/select` returned)
-    - `reward`: 1.0 for success (click, conversion), 0.0 for failure
+    - `arm`:        which variant was shown (must match what `/select` returned)
+    - `reward`:     1.0 for success (click, conversion), 0.0 for failure
     - `experiment`: name of the experiment (optional, defaults to "default")
     """
     try:
@@ -93,12 +95,12 @@ def stats(experiment: str = "default", db: Session = Depends(get_db)):
     summary="Inspect internal bandit state",
     tags=["Bandit"],
 )
-def state():
+def state(experiment: str = "default"):
     """
-    Return the raw internal state of the bandit (counts, values, priors, etc.).
-    Useful for debugging and monitoring.
+    Return the raw internal state of the bandit for a given experiment
+    (counts, values, priors, etc.). Useful for debugging and monitoring.
     """
-    return get_bandit_state()
+    return get_bandit_state(experiment=experiment)
 
 
 # ─── Experiment Endpoints ─────────────────────────────────────────────────────
@@ -113,9 +115,8 @@ def create_experiment(data: ExperimentCreate, db: Session = Depends(get_db)):
     """
     Register a named experiment with a specific algorithm and arm count.
 
-    Note: The API currently runs a single global bandit. This endpoint
-    persists experiment metadata and can be extended to support
-    per-experiment bandit instances.
+    Each experiment gets its own independent in-memory bandit instance,
+    so different experiments can run different algorithms simultaneously.
     """
     existing = crud.get_experiment(db, data.name)
     if existing:

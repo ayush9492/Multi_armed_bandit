@@ -1,18 +1,25 @@
-class BaseBandit:
+from abc import ABC, abstractmethod
+
+
+class BaseBandit(ABC):
     """Abstract base class for all bandit algorithms."""
 
+    @abstractmethod
     def select_arm(self) -> int:
         """Return the index of the arm to pull next."""
-        raise NotImplementedError
+        ...
 
+    @abstractmethod
     def update(self, arm: int, reward: float) -> None:
         """Update internal state after observing a reward for the given arm."""
-        raise NotImplementedError
+        ...
 
+    @abstractmethod
     def get_state(self) -> dict:
         """Return serializable state for persistence/inspection."""
-        raise NotImplementedError
+        ...
 
+    @abstractmethod
     def load_state(self, state: dict) -> None:
         """Restore bandit state from a previously saved dict."""
-        raise NotImplementedError
+        ...
