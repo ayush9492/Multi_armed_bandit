@@ -1,10 +1,9 @@
 from fastapi import FastAPI
 from app.api.routes import router
 from app.db.database import Base, engine
-from app.services.experiment_service import load_bandit_state_from_db
+from app.services.experiment_service import load_all_bandits_from_db
 from app.db.database import SessionLocal
 
-# Create all DB tables on startup
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
@@ -18,13 +17,10 @@ app.include_router(router)
 
 @app.on_event("startup")
 def startup_event():
-    """
-    On startup, reload bandit state from the database so that a server
-    restart doesn't lose all previously learned knowledge.
-    """
+    """On startup, reload all experiment bandits from DB."""
     db = SessionLocal()
     try:
-        load_bandit_state_from_db(db)
+        load_all_bandits_from_db(db)
     finally:
         db.close()
 

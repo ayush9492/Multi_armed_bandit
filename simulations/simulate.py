@@ -4,13 +4,8 @@ import sys
 import os
 import requests
 import mlflow
-
-# ─── MLflow tracking URI (relative path — works on all platforms) ─────────────
-# Stores mlflow.db next to this script's parent directory.
-_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-mlflow.set_tracking_uri(f"sqlite:///{os.path.join(_ROOT, 'mlflow.db')}")
-
-sys.path.insert(0, _ROOT)
+mlflow.set_tracking_uri("sqlite:///" + os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "mlflow.db"))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.bandits.factory import create_bandit
 from app.utils.metrics import summary
@@ -18,9 +13,9 @@ from app.utils.metrics import summary
 # ─── Config ──────────────────────────────────────────────────────────────────
 
 TRUE_WIN_RATES = [0.2, 0.5, 0.35]   # Arm 1 is the true best
-BEST_ARM       = TRUE_WIN_RATES.index(max(TRUE_WIN_RATES))
-BEST_RATE      = max(TRUE_WIN_RATES)
-API_URL        = "http://localhost:8000"
+BEST_ARM = TRUE_WIN_RATES.index(max(TRUE_WIN_RATES))
+BEST_RATE = max(TRUE_WIN_RATES)
+API_URL = "http://localhost:8000"
 
 
 # ─── Mode 1: In-Memory Simulation (for MLflow + metrics) ─────────────────────
@@ -37,7 +32,7 @@ def run_simulation(algorithm: str, n_rounds: int, epsilon: float = 0.1):
     history = []
 
     for _ in range(n_rounds):
-        arm    = bandit.select_arm()
+        arm = bandit.select_arm()
         reward = 1 if random.random() < TRUE_WIN_RATES[arm] else 0
         bandit.update(arm, reward)
         history.append((arm, reward))
@@ -100,17 +95,17 @@ def run_mlflow_comparison(n_rounds: int = 1000):
 
     for algo in ["thompson", "epsilon_greedy", "ucb"]:
         with mlflow.start_run(run_name=algo):
-            mlflow.log_param("algorithm",      algo)
-            mlflow.log_param("n_arms",         len(TRUE_WIN_RATES))
-            mlflow.log_param("rounds",         n_rounds)
+            mlflow.log_param("algorithm", algo)
+            mlflow.log_param("n_arms", len(TRUE_WIN_RATES))
+            mlflow.log_param("rounds", n_rounds)
             mlflow.log_param("true_win_rates", str(TRUE_WIN_RATES))
 
             stats, _ = run_simulation(algo, n_rounds=n_rounds)
 
-            mlflow.log_metric("final_regret",   stats["final_cumulative_regret"])
+            mlflow.log_metric("final_regret", stats["final_cumulative_regret"])
             mlflow.log_metric("best_arm_share", max(stats["traffic_share_per_arm"]))
-            mlflow.log_metric("mean_reward",    stats["overall_mean_reward"])
-            mlflow.log_metric("total_reward",   stats["total_reward"])
+            mlflow.log_metric("mean_reward", stats["overall_mean_reward"])
+            mlflow.log_metric("total_reward", stats["total_reward"])
 
             print(f"Done: {algo}")
             print(f"   Regret      : {stats['final_cumulative_regret']}")
@@ -119,8 +114,6 @@ def run_mlflow_comparison(n_rounds: int = 1000):
 
     print("Done! Launch MLflow UI with: mlflow ui")
     print("Then open: http://localhost:5000")
-
-
 # ─── CLI Entry Point ──────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -137,7 +130,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("--algorithm", default="thompson",
                         choices=["thompson", "epsilon_greedy", "ucb"])
-    parser.add_argument("--rounds",  type=int,   default=1000)
+    parser.add_argument("--rounds", type=int, default=1000)
     parser.add_argument("--epsilon", type=float, default=0.1)
     args = parser.parse_args()
 
