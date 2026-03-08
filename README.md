@@ -90,7 +90,7 @@ A Multi-Armed Bandit solves this by **learning on the fly**:
 │   ├── config.py                  # .env loader
 │   └── main.py                    # FastAPI app entrypoint
 ├── dashboard/
-│   └── streamlit_app.py           # Real-time monitoring dashboard
+│   └── streamlit_app.py           # Real-time monitoring + algorithm comparison
 ├── simulations/
 │   └── simulate.py                # CLI simulation + MLflow comparison
 ├── tests/
@@ -99,9 +99,11 @@ A Multi-Armed Bandit solves this by **learning on the fly**:
 ├── docker/
 │   ├── Dockerfile
 │   └── docker-compose.yml
+├── run_experiments.py             # Create + simulate named experiments with MLflow logging
 ├── .env                           # Config (not committed to git)
 ├── .gitignore
 ├── .dockerignore
+├── .python-version                # Pins Python 3.11 for Streamlit Cloud
 └── requirements.txt
 ```
 
@@ -112,17 +114,21 @@ A Multi-Armed Bandit solves this by **learning on the fly**:
 ### Local Development
 
 ```bash
-# Install dependencies
+# 1. Install dependencies
 pip install -r requirements.txt
 
-# Start the API
-uvicorn app.main:app --reload
+# 2. Start the API
+uvicorn app.main:app --reload --port 8000
 
-# Start the dashboard (in another terminal)
+# 3. Start the dashboard (new terminal)
 streamlit run dashboard/streamlit_app.py
 
-# Run a simulation (populates the dashboard)
-python simulations/simulate.py --mode api --rounds 1000
+# 4. Run experiments — creates 3 named experiments and simulates 1000 pulls each
+python run_experiments.py
+
+# 5. View MLflow results (new terminal)
+mlflow ui --port 5000
+# Open: http://localhost:5000
 ```
 
 ### Docker
@@ -137,34 +143,38 @@ The API will be available at `http://localhost:8000` and the dashboard at `http:
 
 ## 📡 API Endpoints
 
-| Method | Endpoint       | Description                       |
-|--------|----------------|-----------------------------------|
-| GET    | `/`            | Health check                      |
-| GET    | `/select`      | Get the next arm to show          |
-| POST   | `/reward`      | Submit reward for an arm          |
-| GET    | `/stats`       | Get per-arm statistics            |
-| GET    | `/state`       | Inspect internal bandit state     |
-| GET    | `/experiments` | List all experiments              |
-| POST   | `/experiments` | Create a new experiment           |
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/` | Health check |
+| GET | `/select?experiment=<n>` | Get the next arm to show |
+| POST | `/reward` | Submit reward for an arm |
+| GET | `/stats?experiment=<n>` | Get per-arm statistics |
+| GET | `/state?experiment=<n>` | Inspect internal bandit state |
+| GET | `/experiments` | List all experiments |
+| POST | `/experiments` | Create a new experiment |
 
-All endpoints accept an optional `?experiment=<name>` query parameter.  
-Each experiment runs its own **independent bandit instance**.
+Each experiment runs its own **independent bandit instance** — passing `?experiment=<name>` routes to the correct algorithm automatically.
 
 ### Example Usage
 
 ```bash
-# Get which variant to show
-curl http://localhost:8000/select
+# Create a named experiment with Thompson Sampling
+curl -X POST http://localhost:8000/experiments \
+  -H "Content-Type: application/json" \
+  -d '{"name": "thompson_sampling", "algorithm": "thompson", "n_arms": 3}'
 
-# Submit a reward (1 = success, 0 = failure)
+# Get which variant to show for that experiment
+curl http://localhost:8000/select?experiment=thompson_sampling
+
+# Submit a reward
 curl -X POST http://localhost:8000/reward \
   -H "Content-Type: application/json" \
-  -d '{"arm": 0, "reward": 1}'
+  -d '{"arm": 1, "reward": 1.0, "experiment": "thompson_sampling"}'
 
-# Get stats
-curl http://localhost:8000/stats
+# Get per-arm stats
+curl http://localhost:8000/stats?experiment=thompson_sampling
 
-# Create a named experiment with UCB and 4 arms
+# Create a UCB experiment with 4 arms
 curl -X POST http://localhost:8000/experiments \
   -H "Content-Type: application/json" \
   -d '{"name": "homepage_cta", "algorithm": "ucb", "n_arms": 4}'
@@ -177,8 +187,8 @@ curl -X POST http://localhost:8000/experiments \
 ```env
 DATABASE_URL=sqlite:///./bandit.db
 N_ARMS=3
-ALGORITHM=thompson      # Options: thompson, epsilon_greedy, ucb
-EPSILON=0.1             # Only for epsilon_greedy
+ALGORITHM=epsilon_greedy    # Default: thompson | epsilon_greedy | ucb
+EPSILON=0.1                 # Only used by epsilon_greedy
 DEBUG=True
 ```
 
@@ -186,16 +196,17 @@ DEBUG=True
 
 ## 🧠 Algorithms
 
-| Algorithm        | Description                              | Best For                                  |
-|------------------|------------------------------------------|-------------------------------------------|
-| `thompson`       | Beta-distribution sampling               | Best overall — handles uncertainty naturally |
-| `epsilon_greedy` | ε% random exploration, rest exploit best | Simple, predictable, easy to explain      |
-| `ucb`            | Optimistic upper confidence bound (UCB1) | Theoretical regret guarantees             |
+| Algorithm | Description | Best For |
+|-----------|-------------|----------|
+| `thompson` | Beta-distribution sampling | Best overall — handles uncertainty naturally |
+| `epsilon_greedy` | ε% random exploration, rest exploit best | Simple, predictable, easy to explain |
+| `ucb` | Optimistic upper confidence bound (UCB1) | Theoretical regret guarantees |
 
 All three algorithms support:
 - Continuous rewards in `[0.0, 1.0]` (not just binary 0/1)
-- `get_state()` / `load_state()` for full state serialisation
+- `get_state()` for full state inspection
 - Automatic state replay from DB on server restart — no knowledge is lost on reboot
+- Per-experiment isolation — each named experiment runs its own independent bandit
 
 ---
 
@@ -203,29 +214,70 @@ All three algorithms support:
 
 🚀 **Live:** [multiarmedbandit.streamlit.app](https://multiarmedbandit.streamlit.app/)
 
-The Streamlit dashboard shows live data from `bandit.db`:
+The Streamlit dashboard has two modes:
 
-- Per-arm mean reward (bar chart)
-- Traffic share per arm (pie chart)
-- Cumulative reward over time
-- **Cumulative regret curve** — lower = better algorithm
+**Live Mode** (when running locally with API + DB):
+- Auto-refreshes every 5 seconds from `bandit.db`
+
+**Demo Mode** (Streamlit Cloud / no DB):
+- Activates automatically when no database is found
+- Shows a realistic simulation across all 3 algorithms
+
+### Dashboard Tabs
+
+**⚔️ Algorithm Comparison tab** — side-by-side across all experiments:
+- Summary table (pulls, mean reward, best arm, traffic %)
+- Cumulative reward curves
+- Cumulative regret curves (lower = better algorithm)
 - Rolling mean reward (window = 50)
+- Traffic share pie charts per algorithm
+- Grouped mean reward per arm bar chart
 
-Access locally at: `http://localhost:8501`
+**Per-experiment tabs** — individual deep-dives:
+- KPI row (total pulls, total reward, mean reward, leading arm)
+- Mean reward per arm, traffic share, cumulative reward, rolling mean, regret curve
+
+Access locally at `http://localhost:8501`
+
+---
+
+## 🧪 Running Experiments
+
+```bash
+python run_experiments.py
+```
+
+This script:
+1. Creates 3 named experiments (`thompson_sampling`, `ucb`, `epsilon_greedy`) via the API
+2. Simulates 1,000 pulls each against true win rates `[0.30, 0.55, 0.15]`
+3. Skips experiments that already have enough data — safe to re-run
+4. Logs all metrics to MLflow automatically
+
+Change `N_PULLS = 1000` at the top to simulate more pulls.
 
 ---
 
 ## 📈 MLflow Experiment Tracking
 
-Compare all 3 algorithms and log metrics automatically:
-
 ```bash
-python simulations/simulate.py --mode mlflow --rounds 2000
-mlflow ui
+# Logs automatically when you run:
+python run_experiments.py
+
+# Then open the UI:
+mlflow ui --port 5000
 # Open: http://localhost:5000
 ```
 
-Tracked metrics per run: `final_regret`, `best_arm_share`, `mean_reward`, `total_reward`
+**Tracked metrics per run:**
+
+| Metric | Description |
+|--------|-------------|
+| `mean_reward` | Overall efficiency |
+| `total_reward` | Total reward collected |
+| `cumulative_regret` | Reward lost vs optimal policy |
+| `best_arm_traffic_pct` | % of traffic routed to best arm |
+| `arm_0/1/2_pulls` | Per-arm pull counts |
+| `arm_0/1/2_mean_reward` | Per-arm estimated reward |
 
 ---
 
@@ -239,5 +291,20 @@ Test coverage includes:
 - All 3 algorithm unit tests (select, update, state roundtrip, convergence)
 - Factory function (valid + invalid algorithm names)
 - All API endpoints (health, select, reward, stats, state, experiments)
-- Per-experiment arm validation (rejects out-of-range arms correctly)
+- Per-experiment arm validation (rejects out-of-range arms)
 - Duplicate experiment 409 conflict handling
+
+---
+
+## 🐳 Docker
+
+```bash
+docker-compose -f docker/docker-compose.yml up --build
+
+# Services:
+# API        → http://localhost:8000
+# Dashboard  → http://localhost:8501
+# MLflow     → http://localhost:5000
+```
+
+The `docker-compose.yml` uses health checks so the dashboard only starts after the API is healthy.
